@@ -1,0 +1,512 @@
+SOCKET PROGRAMMING
+==================
+
+Objective
+---------
+Writing simple UDP and TCP client-server
+network programs.
+
+
+UDP
+---
+
+I have heavily commented the code to make it self-explanatory.
+
+
+/* udpserver.c
+ * -----------
+ * will listen on port 33333
+ * you can change to any other port above 1024 but be sure
+ * to change your udpclient.c to send to the new port
+ * run udpserver, then run udpclient, 
+ * udpclient will send "Hello"
+ * udpserver receives it and prints messsage
+ * NOTE-> you can run both udpserver and udpclient on same machine
+ *
+ * - paul
+ */
+
+#include <stdio.h>
+#include <sys/socket.h> //for socket(), bind(), recvfrom(), sockaddr_in
+#include <resolv.h>     //for socket(), bind(), recvfrom(), sockaddr_in
+#include <netinet/in.h>
+#define BUFSIZE 80	//set bigger num if you expect to recv longer strings
+
+int main()
+{	char buffer[BUFSIZE];
+	struct sockaddr_in addr; // create an internet socket address struct 
+	int sd, addr_size;
+	
+	/* init buffer to NULL so that u won't get junk when doing printf() */
+	memset(buffer, 0, BUFSIZE); 
+	
+	/* must create socket, for communication  */
+	sd = socket(PF_INET, SOCK_DGRAM, 0);//ie: Internet, UDP, IP
+
+	/* initialize own IP address and port 
+	 * INADDR_ANY will automatically be replaced with
+	 * own IP address, eg, "127.0.0.1" if no NIC present
+	 * the sockaddr_in has 3 members (4 actually), ie,
+	 * socket internet family (sin_family),
+	 * socket internet port (sin_port)
+	 * socket address (sin_addr.s_addr)
+	 * note -> sin_addr.s_addr is struct within a struct, real
+	 * ugly*/
+	addr.sin_family = AF_INET;     //ie, internet
+	addr.sin_port = htons(33333);   //like atoi()
+	addr.sin_addr.s_addr = INADDR_ANY;  
+
+	/* must bind the address and port so that
+	 * clients can send to it */
+	bind(sd, &addr, sizeof(addr)); 
+	
+	
+	/* recvfrom() will accept the client's message and store it in
+	 * a string called "buffer"
+	 * Because recvfrom()' last param is a pointer, we
+	 * need to pass the addr's size indirectly.
+	 * that's why we need  "addr_size" so that we can pass it's
+	 * address in recvfrom()'s last param. 
+	 * Note that we don't have to do this
+	 * for sendto(), because sendto()'s address size param is
+	 * type int 
+	 * sendto() is used in udpclient.c */
+	addr_size = sizeof(addr); 
+	recvfrom(sd, buffer, BUFSIZE, 0, &addr, &addr_size);
+		
+	
+	
+	printf("Received -> %s\n", buffer);
+			
+	close(sd);
+	return 0;
+}
+
+
+snip...............................................................................
+
+
+
+
+
+/* udpclient.c
+ * ------------
+ * Here's a very simple client
+ * set the destination IP address below in inet_aton(), ie, the server's addr
+ * eg, "192.168.1.173",  33333 is the server's port where udpserver is 
+ * listening, you can change to any other port, but be sure to also
+ * change the udpserver.c code to listen to the same port that udpclient
+ * is goint to send to
+ * run it, and it will send "Hello" to udpserver
+ * NOTE -> udpserver must be listening before you run udpclient
+ * you can run both client and server on the same machine
+ * just set the destination IP below to "127.0.0.1". 
+ * 
+ *  - paul
+ */
+
+#include <sys/socket.h> //for socket(), sendto(), inet_aton()
+#include <resolv.h>     //for socket(), sendto()
+#include <netinet/in.h> //for htons() which works like atoi()
+
+int main()
+{
+	struct sockaddr_in addr; //addr -> to store IP address and port
+	int sd; //socket descriptor, like file descriptor
+
+	/* must create socket before can talk */
+	sd = socket(PF_INET, SOCK_DGRAM, 0); //internet, UDP, IP
+	
+	
+	/* initialize the destination IP address and port */
+	addr.sin_family = AF_INET;   //AF_INET is internet
+	addr.sin_port = htons(33333); //something like atoi()
+	inet_aton("192.168.1.173", &addr.sin_addr);//something like strcpy()
+	
+	
+	/* Send message, '0' means normal */
+	sendto(sd, "Hello", strlen("Hello"), 0, &addr, sizeof(addr));
+
+	
+	close(sd);
+	return 0;
+}
+
+
+
+snip............................................................................
+
+
+
+TCP
+---
+
+Below are the TCP versions of the above programs.
+
+
+/* tcpserver.c 
+ * -----------
+ * this is the TCP version of udpserver.c  
+ * the parts which are different are commented below
+ *  - paul */  
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#define BUFSIZE 80
+
+main()
+{	
+	int sd, clientsd,addr_len;
+	struct sockaddr_in addr;
+	char buf[BUFSIZE];
+	
+	sd = socket(PF_INET, SOCK_STREAM, 0);
+	memset(&addr,0,sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(33333);
+	addr.sin_addr.s_addr = INADDR_ANY;
+
+	bind(sd, &addr, sizeof(addr) );
+	
+	/* listen on socket, and can queue 20 connect requests */
+	listen(sd, 20);
+	
+	/* addr_len is merely to store sizeof addr so that we can
+	 * pass the address of addr to accept, because the third
+	 * param of accept() is a pointer 
+	 * Note: for connect(), third param is integer */
+	addr_len = sizeof(addr);
+	
+	/* because TCP is connection-oriented, must do accept()
+	 * it will return a new socket, and will reuse the addr struct
+	 * that was defined above, bind() doesn't need it anymore.
+	 * Alternatively, yu can define another sockaddr_in, eg
+	 * struct sockaddr_in clientaddr, but it is not necessary */
+	clientsd = accept(sd, &addr, &addr_len); 
+	
+	memset(buf,0,BUFSIZE);
+	
+	/* TCP uses recv(), UDP uses recvfrom() */
+	recv(clientsd, buf, BUFSIZE, 0);
+	printf("Client-> %s\n", buf);
+		
+		
+	close(clientsd);
+	close(sd);
+}
+
+
+snip........................................................................
+
+
+
+	
+
+/* tcpclient.c 
+ * -----------
+ * this is the TCP version of the udpclient.c
+ * be sure to change the IP address in inet_aton() below to 
+ * that of your server */
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+
+main()
+{	
+	int sd;
+	struct sockaddr_in addr;
+	
+	sd = socket(PF_INET, SOCK_STREAM, 0);
+	memset(&addr,0,sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(33333);
+	
+	/* change this to your server's IP */
+	inet_aton("192.168.1.173", &addr.sin_addr);
+	
+	/* TCP is connection-oriented, that's why must connect() */
+	connect(sd, &addr, sizeof(addr)); 
+	
+	/* TCP uses send(), UDP uses sendto() */
+	send(sd, "Hello" , strlen("Hello"), 0);
+
+	
+	close(sd);
+}
+
+
+snip.........................................................................
+
+
+
+
+
+
+Multitasking Server
+--------------------
+
+This server multitasks using processes. It is capable of accepting more
+than 1 client.
+	
+/* multi_tcpserver.c 
+ * -----------------
+ * this is a multitasking server, using processes.   
+ * it can accept connections from multiple clients.
+ * use tcpclient to connect.
+ *  - paul */  
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <unistd.h>  /* needed by fork() */
+#define BUFSIZE 80
+
+main()
+{	
+	int sd, clientsd, addr_len, PID;
+	struct sockaddr_in addr;
+	char buf[BUFSIZE];
+	
+	sd = socket(PF_INET, SOCK_STREAM, 0);
+	memset(&addr,0,sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(33333);
+	addr.sin_addr.s_addr = INADDR_ANY;
+
+	bind(sd, &addr, sizeof(addr) );
+	
+	/* listen on socket, and can queue 20 connect requests */
+	listen(sd, 20);
+
+
+	while(1){	
+		addr_len = sizeof(addr);
+		clientsd = accept(sd, &addr, &addr_len); 
+	
+		/* 
+		 * After fork(), there will be two identical processess, ie
+		 * 1. the parent -> with it's fork() will return a positive
+		 *    integer eg, 1689 which becomes the child's pid
+		 * 2. the child -> with it's fork() which  returns 0
+		 * Therefore we test the return value to differentiate the 
+		 * parent from the child. If it is the parent, we close
+		 * the new client socket ("clientsd"). 
+		 * If it is the child we close the main socket ("sd").
+		 */ 	
+		PID = fork(); 
+		if(PID==0){	/* a child since, pid==0 */
+			close(sd);/*child don't need to listen on original socket*/
+			memset(buf,0,BUFSIZE);
+	
+			recv(clientsd, buf, BUFSIZE, 0);
+
+			/* print the child's pid, and the "Hello" message
+			 * from tcpclient */
+			printf("Client %d -> %s\n", getpid(), buf);
+			close(clientsd);
+			exit(0);
+		}
+		else    /* ie pid is above 0, therefore a parent */
+			close(clientsd); /*parent don't need clientsd
+					  since it's job is to listen on 
+					  main socket, ie sd.*/ 
+	}
+	
+}
+
+
+	
+
+How to compile
+--------------
+
+	cc udpclient.c -o client
+	cc udpserver.c -o server
+
+etc.
+
+Same as for the TCP client  and server.
+
+
+
+How to run
+----------
+Server must also start first:
+
+	./server
+
+Then run the client:
+
+	./client
+
+Alternatively you can use nc or telnet to connect to the server.
+
+Or, you can start the server with nc:
+
+	nc -v -n -l -p 33333
+
+where -v is verbose, -n means do not resolve ip, -l listen -p is portnum
+
+
+Then connect with:
+
+	./client
+
+
+
+
+Reusing Addresses
+----------------
+
+Whenever a connection is abnormally terminated, the server goes inti
+TIME_WAIT for 60 secs. Meanwhile the port num is still bound and a new server cannot
+start.  In order to solve this problem, use:
+
+	setsockopt() to reuses the portnumber
+
+An example program:
+
+
+
+
+   /*  vulnerable_reuseaddr.c  */
+
+   //setsockopt includes
+   #include <sys/types.h>
+   #include <sys/socket.h>
+
+
+   #include <stdio.h>
+   #include <netdb.h>
+   #include <netinet/in.h>
+   #define BUFFER_SIZE 1024
+   //#define BUFFER_SIZE 900 
+   #define NAME_SIZE 2048
+
+   int handling(int c)
+   {
+       char buffer[BUFFER_SIZE], name[NAME_SIZE];
+       int bytes;
+       strcpy(buffer, "My name is: ");
+       bytes = send(c, buffer, strlen(buffer), 0);
+       if (bytes == -1) return -1;
+       bytes = recv(c, name, sizeof(name), 0);
+       if (bytes == -1) return -1;
+       name[bytes - 1] = '\0';
+       
+       /* buffer overflow */
+       sprintf(buffer, "Hello %s, nice to meet you!\r\n", name);
+
+       bytes = send(c, buffer, strlen(buffer), 0);
+       if (bytes == -1) return -1;
+       
+       return 0;
+  }
+
+  int main(int argc, char *argv[])
+  {
+       //setsockopt
+       int value=1;  /* Boolean TRUE see Walton 209  */
+	  
+       int s, c, cli_size;
+       struct sockaddr_in srv, cli;
+       if (argc != 2)
+       {
+       		fprintf(stderr, "usage: %s port\n", argv[0]);
+       		return 1;
+       }
+       s = socket(AF_INET, SOCK_STREAM, 0);
+       if (s == -1)
+       {
+       		perror("socket() failed");
+       		return 2;
+       }
+
+       //setsockopt
+       if( setsockopt(s,SOL_SOCKET,SO_REUSEADDR,&value, sizeof(value)) != 0)
+       {
+	       perror("setsockopt() failed");
+       }
+
+       
+       srv.sin_addr.s_addr = INADDR_ANY;
+       srv.sin_port = htons( (unsigned short int) atol(argv[1]));
+       srv.sin_family = AF_INET;
+       if (bind(s, &srv, sizeof(srv)) == -1)
+       {
+       		perror("bind() failed");
+       		return 3;
+       }
+       if (listen(s, 3) == -1)
+       {
+       		perror("listen() failed");
+       		return 4;
+       }
+       for(;;)
+       {
+       		c = accept(s, &cli, &cli_size);
+       		if (c == -1)
+       		{
+       			perror("accept() failed");
+       			return 5;
+       		}
+		
+		/* added \n  */
+       		printf("client from %s\n", inet_ntoa(cli.sin_addr));
+       		if (handling(c) == -1)
+       		fprintf(stderr, "%s: handling() failed", argv[0]);
+       		close(c);
+       }
+       return 0;
+   }
+
+
+
+
+The relevant required parts:
+
+       //setsockopt includes
+       #include <sys/types.h>
+       #include <sys/socket.h>
+
+       //setsockopt
+       int value=1;  /* Boolean TRUE see Walton 209  */
+
+
+       //setsockopt
+       if( setsockopt(s,SOL_SOCKET,SO_REUSEADDR,&value, sizeof(value)) != 0)
+       {
+	       perror("setsockopt() failed");
+       }
+
+
+
+Compiling:
+
+	gcc vulnerable_reuseaddr.c -o vulnerable_reuseaddr
+
+running:
+
+	./vulnerable_reuseaddr 8888
+
+Connect with nc or telnet, then kill the connection by force:
+
+	killall -9 vulnerable_reuseaddr
+
+The server port 8888 will go into TIME_WAIT for 60 secs
+
+restart:
+
+	./vulnerable_reuseaddr 8888
+
+And you can still listen on port 8888, no bind() error.
+
+
